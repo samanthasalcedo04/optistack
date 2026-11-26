@@ -1,0 +1,10 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "IoTHubConnectionString": "Endpoint=sb://ihsuprodamres011dednamespace.servicebus.windows.net/;SharedAccessKeyName=iothubowner;SharedAccessKey=TU_KEY;EntityPath=iot-optistack",
+    "AZURE_SQL_CONNECTION_STRING": "mssql+pyodbc://optiadmin:TU_PASSWORD@sql-optistack.database.windows.net:1433/OptiStackDB?driver=ODBC+Driver+18+for+SQL+Server&Encrypt=yes&TrustServerCertificate=no",
+    "OPTISTACK_WEBAPP_URL": "https://app-optistack.azurewebsites.net"
+  }
+}

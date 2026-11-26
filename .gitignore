@@ -1,0 +1,23 @@
+# Entornos virtuales y caché Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Credenciales y configuración local sensible
+.azure/
+.env
+*.env
+azure_function/local.settings.json
+
+# Bases de datos locales y paquetes de despliegue
+*.db
+*.sqlite
+*.sqlite3
+*.zip
+
+# Logs y archivos temporales
+*.log
+.DS_Store
+Thumbs.db

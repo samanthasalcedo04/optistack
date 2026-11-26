@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>OptiStack HMI 3D Dashboard | Visualizador Dinámico de Estiba - Azure Cloud</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/hmi-theme.css" />
+    <!-- Three.js + OrbitControls CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+</head>
+<body>
+
+    <!-- =========================================================================
+         CABECERA SUPERIOR HMI (NAVEGACIÓN Y ESTADO DE SERVICIOS AZURE)
+         ========================================================================= -->
+    <header class="hmi-topbar">
+        <div class="brand-block">
+            <div class="brand-logo">3D</div>
+            <div>
+                <div class="brand-title">
+                    OPTISTACK HMI
+                    <span class="brand-badge">Extreme Points 3D</span>
+                </div>
+                <div class="brand-subtitle">Azure IoT Hub &bull; Azure ML &bull; Azure SQL Database &bull; App Service</div>
+            </div>
+        </div>
+
+        <nav class="hmi-nav" aria-label="Navegación Principal HMI">
+            <button class="nav-tab active" data-target="view-visualizer" id="tab-btn-visualizer">
+                <span>&#9638; Visor 3D en Tiempo Real</span>
+            </button>
+            <button class="nav-tab" data-target="view-trucks" id="tab-btn-trucks">
+                <span>&#128666; CRUD Flota / Furgones</span>
+                <span class="nav-badge-count" id="nav-trucks-count">0</span>
+            </button>
+            <button class="nav-tab" data-target="view-agencies" id="tab-btn-agencies">
+                <span>&#128205; CRUD Rutas + Carga Excel</span>
+                <span class="nav-badge-count" id="nav-agencies-count">0</span>
+            </button>
+        </nav>
+
+        <div class="topbar-status">
+            <div class="status-pill" title="Estado del canal WebSocket en tiempo real">
+                <span class="pulse-dot" id="ws-status-dot"></span>
+                <span id="ws-status-text">Telemetría Live (WS)</span>
+            </div>
+            <div class="status-pill" title="Motor de Base de Datos Conectado">
+                <span style="color: var(--accent-cyan); font-weight: 700;">SQL</span>
+                <span id="db-engine-label">OptiStack DB</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- =========================================================================
+         VISTA 1: VISOR 3D INTERACTIVO DE ESTIBA EN TIEMPO REAL
+         ========================================================================= -->
+    <main id="view-visualizer" class="view-section active hmi-dashboard-layout">
+
+        <!-- FRANJA DE KPIs CRÍTICOS (ISA-101) -->
+        <section class="kpi-ribbon">
+            <!-- Tarjeta 1: Furgón Activo y Dimensiones Personalizadas -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Furgón / Mapa de Estiba Activo</span>
+                    <span id="kpi-truck-dims" style="color: var(--accent-cyan); font-family: var(--font-mono);">-- &times; -- &times; -- cm</span>
+                </div>
+                <div class="session-selector-row">
+                    <select id="active-truck-selector" class="hmi-select" title="Cambiar o iniciar estiba con un furgón del CRUD"></select>
+                    <button class="btn btn-outline btn-sm" id="btn-new-session-from-truck" title="Iniciar nueva sesión de estiba limpia con el furgón seleccionado">
+                        Nueva Estiba
+                    </button>
+                    <button class="btn btn-emerald btn-sm" id="btn-ai-reoptimize" title="Reorganizar y optimizar la estiba completa con el algoritmo de Inteligencia Artificial">
+                        🤖 Optimizar IA
+                    </button>
+                    <button class="btn btn-danger btn-sm" id="btn-clear-current-map" title="Vaciar paquetes del contenedor actual">
+                        Vaciar
+                    </button>
+                </div>
+            </div>
+
+            <!-- Tarjeta 2: Ocupación Volumétrica -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Ocupación Volumétrica</span>
+                    <span id="kpi-vol-m3" class="kpi-subvalue">0.00 / 0.00 m&sup3;</span>
+                </div>
+                <div class="kpi-main-row">
+                    <span class="kpi-value" id="kpi-vol-pct">0.0%</span>
+                    <span class="kpi-subvalue">Eficiencia 3D</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill" id="kpi-vol-bar" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- Tarjeta 3: Capacidad de Peso -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Capacidad de Peso</span>
+                    <span id="kpi-weight-kg" class="kpi-subvalue">0 / 0 kg</span>
+                </div>
+                <div class="kpi-main-row">
+                    <span class="kpi-value" id="kpi-weight-pct">0.0%</span>
+                    <span class="kpi-subvalue">Balanza IoT</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill emerald" id="kpi-weight-bar" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- Tarjeta 4: Paquetes Escaneados y Última Guía -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Paquetes en Contenedor</span>
+                    <span id="kpi-last-source" class="kpi-subvalue">IoT Hub</span>
+                </div>
+                <div class="kpi-main-row">
+                    <span class="kpi-value" id="kpi-pkg-count">0</span>
+                    <span class="kpi-subvalue" id="kpi-last-guide" style="color: var(--accent-cyan);">Sin guías</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill" id="kpi-seq-bar" style="width: 100%; opacity: 0.35;"></div>
+                </div>
+            </div>
+
+            <!-- Tarjeta 5: Balance y Centro de Gravedad (CoG) -->
+            <div class="kpi-card">
+                <div class="kpi-header">
+                    <span>Centro de Gravedad (CoG)</span>
+                    <span id="kpi-stability-badge" class="brand-badge">OPTIMAL</span>
+                </div>
+                <div class="kpi-main-row">
+                    <span class="kpi-value" id="kpi-cog-coords" style="font-size: 14.5px;">X:0 Y:0 Z:0 cm</span>
+                    <span class="kpi-subvalue" id="kpi-cog-offset">Desv: 0.0%</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill emerald" id="kpi-cog-bar" style="width: 50%;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ÁREA CENTRAL: LIENZO 3D INTERACTIVO + SIDEBAR DE OPERACIONES -->
+        <div class="hmi-workspace">
+
+            <!-- ZONA CENTRAL: VISOR 3D WEBGL -->
+            <div class="viewport-container">
+
+                <!-- Controles Superiores Flotantes: Vistas de Cámara y Modo de Coloración -->
+                <div class="viewport-overlay-top">
+                    <div class="overlay-toolbar">
+                        <span class="toolbar-label">Cámara 3D:</span>
+                        <button class="tool-btn active" data-cam="iso">Isométrica</button>
+                        <button class="tool-btn" data-cam="top">Planta (Superior)</button>
+                        <button class="tool-btn" data-cam="side">Lateral</button>
+                        <button class="tool-btn" data-cam="rear">Puerta Trasera</button>
+                        <button class="tool-btn" id="btn-toggle-xray" title="Alternar transparencia de cajas para ver el interior">
+                            Rayos-X
+                        </button>
+                    </div>
+
+                    <div class="overlay-toolbar">
+                        <span class="toolbar-label">Coloración:</span>
+                        <button class="tool-btn active" data-colormode="agency">Por Ruta / Agencia</button>
+                        <button class="tool-btn" data-colormode="weight">Mapa Calor Peso</button>
+                        <button class="tool-btn" data-colormode="sequence">Secuencia Ingreso</button>
+                    </div>
+                </div>
+
+                <!-- Contenedor del Canvas Three.js -->
+                <div id="three-canvas-wrapper"></div>
+
+                <!-- Inspector Flotante al hacer Clic sobre un Paquete 3D -->
+                <div id="floating-pkg-inspector" class="package-floating-inspector hidden">
+                    <div class="inspector-title-row">
+                        <span class="inspector-guide" id="insp-guide-id">GUIA-0000</span>
+                        <div style="display:flex; gap:6px; align-items:center;">
+                            <span class="brand-badge" id="insp-seq">#1</span>
+                            <button class="btn btn-danger btn-sm" id="btn-delete-selected-pkg" title="Retirar paquete del contenedor">&times;</button>
+                        </div>
+                    </div>
+                    <div class="inspector-grid">
+                        <div class="inspector-item">
+                            <span>Ruta / Agencia Destino</span>
+                            <strong id="insp-agency">--</strong>
+                        </div>
+                        <div class="inspector-item">
+                            <span>Prioridad LIFO</span>
+                            <strong id="insp-zone">Zona 1</strong>
+                        </div>
+                        <div class="inspector-item">
+                            <span>Dimensiones (L&times;A&times;H)</span>
+                            <strong id="insp-dims">0&times;0&times;0 cm</strong>
+                        </div>
+                        <div class="inspector-item">
+                            <span>Peso Balanza</span>
+                            <strong id="insp-weight">0.0 kg</strong>
+                        </div>
+                        <div class="inspector-item">
+                            <span>Coordenadas (X, Y, Z)</span>
+                            <strong id="insp-coords" style="color: var(--accent-cyan);">(0, 0, 0)</strong>
+                        </div>
+                        <div class="inspector-item">
+                            <span>Orientación 3D</span>
+                            <strong id="insp-rot">LWH</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Barra Inferior del Visor 3D: Corte Longitudinal (Slice X) y Reproductor Paso a Paso -->
+                <div class="viewport-bottom-bar">
+                    <div class="slider-control-group">
+                        <label for="slider-slice-x">Corte Longitudinal (Eje X):</label>
+                        <input type="range" id="slider-slice-x" class="hmi-range" min="10" max="100" value="100" />
+                        <span class="mono-badge" id="label-slice-x">100%</span>
+                    </div>
+
+                    <div class="slider-control-group">
+                        <label for="slider-step-scrubber">Secuencia Paso a Paso:</label>
+                        <input type="range" id="slider-step-scrubber" class="hmi-range" min="0" max="0" value="0" />
+                        <span class="mono-badge" id="label-step-scrubber">0 / 0</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PANEL LATERAL DERECHO: TELEMETRÍA IOT, RUTAS Y COLA DE PAQUETES -->
+            <aside class="hmi-sidebar">
+
+                <!-- 1. Simulador / Inyector de Telemetría IoT (Sensores Volumétricos + Balanza) -->
+                <div class="sidebar-section">
+                    <div class="section-header">
+                        <span class="section-title">&#9889; Telemetría IoT &amp; Escaneo de Paquetes</span>
+                        <span class="brand-badge">MQTT / JSON</span>
+                    </div>
+
+                    <div class="iot-action-row">
+                        <button class="btn btn-primary" id="btn-sim-single-pkg" title="Simular un paquete escaneado por Raspberry Pi / ESP32">
+                            + Simular Paquete IoT
+                        </button>
+                        <button class="btn btn-outline" id="btn-toggle-auto-stream" title="Flujo continuo automático de paquetes cada 2.2 segundos">
+                            &#9654; Auto-Stream IoT
+                        </button>
+                    </div>
+
+                    <!-- Caja de Carga Masiva de Manifiesto Excel para Acomodo con IA -->
+                    <div class="ai-excel-box" style="margin-top: 10px; margin-bottom: 12px; padding: 10px; background: rgba(15, 23, 42, 0.7); border: 1px dashed var(--accent-cyan); border-radius: 6px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-cyan);">&#129302; Estiba Masiva con IA (Excel)</span>
+                            <a href="/api/stowage/excel/packages-template" style="font-size: 10.5px; color: var(--accent-cyan); text-decoration: underline;" download>&#11015; Plantilla</a>
+                        </div>
+                        <input type="file" id="ai-packages-file" accept=".xlsx" style="display: none;" />
+                        <button type="button" class="btn btn-outline btn-sm" id="btn-select-ai-packages-file" style="width: 100%; font-size: 11px;">
+                            &#128194; Subir Manifiesto de Paquetes (.xlsx)
+                        </button>
+                    </div>
+
+                    <!-- Ingreso manual de paquete medido -->
+                    <form id="manual-package-form" class="compact-form-grid">
+                        <div class="form-field">
+                            <label for="inp-pkg-guide">Guide ID</label>
+                            <input type="text" id="inp-pkg-guide" class="hmi-input" placeholder="GUIA-2050" required />
+                        </div>
+                        <div class="form-field span-2">
+                            <label for="inp-pkg-agency">Agencia / Ruta Destino</label>
+                            <select id="inp-pkg-agency" class="hmi-input sans" required></select>
+                        </div>
+                        <div class="form-field">
+                            <label for="inp-pkg-l">Largo L (cm)</label>
+                            <input type="number" id="inp-pkg-l" class="hmi-input" value="75" min="10" max="400" step="1" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="inp-pkg-w">Ancho A (cm)</label>
+                            <input type="number" id="inp-pkg-w" class="hmi-input" value="55" min="10" max="300" step="1" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="inp-pkg-h">Alto H (cm)</label>
+                            <input type="number" id="inp-pkg-h" class="hmi-input" value="45" min="10" max="300" step="1" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="inp-pkg-weight">Peso (kg)</label>
+                            <input type="number" id="inp-pkg-weight" class="hmi-input" value="24.5" min="0.5" max="2000" step="0.5" required />
+                        </div>
+                        <div class="form-field span-2" style="justify-content: flex-end;">
+                            <button type="submit" class="btn btn-emerald" style="width:100%;">
+                                Calcular Extreme Points 3D &amp; Estibar
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- 2. Distribución por Ruta / Agencia Destino (Filtro Interactivo) -->
+                <div class="sidebar-section">
+                    <div class="section-header">
+                        <span class="section-title">&#128205; Zonas por Agencia (LIFO)</span>
+                        <button class="btn btn-outline btn-sm" id="btn-Reset-agency-filter" style="min-height:24px; font-size:10.5px;">
+                            Ver Todas
+                        </button>
+                    </div>
+                    <div id="sidebar-agency-breakdown" class="agency-pills-list"></div>
+                </div>
+
+                <!-- 3. Cola Secuencial de Paquetes Ingresados -->
+                <div class="sidebar-section" style="flex: 1; border-bottom: none;">
+                    <div class="section-header">
+                        <span class="section-title">&#128230; Bitácora de Estiba 3D (x, y, z)</span>
+                        <span id="feed-counter-label" style="font-size:11px; color:var(--text-muted);">0 ítems</span>
+                    </div>
+                    <div id="package-feed-container" class="package-feed-list"></div>
+                </div>
+            </aside>
+        </div>
+    </main>
+
+    <!-- =========================================================================
+         VISTA 2: GESTIÓN CRUD DE CAMIONES / FURGONES (MEDIDAS PERSONALIZADAS)
+         ========================================================================= -->
+    <section id="view-trucks" class="view-section">
+        <div class="crud-page-container">
+
+            <!-- Formulario CRUD de Furgón -->
+            <div class="crud-card">
+                <div class="crud-card-title">
+                    <span id="truck-form-title">Registrar Nuevo Furgón / Camión</span>
+                    <span class="brand-badge">TruckMaster</span>
+                </div>
+                <p class="crud-card-desc">
+                    Ingresa las medidas internas útiles exactas de cada furgón (sin depender de medidas estándar fijas). El modelo 3D se adaptará automáticamente.
+                </p>
+
+                <form id="crud-truck-form" class="crud-form">
+                    <input type="hidden" id="truck-edit-id" value="" />
+
+                    <div class="crud-row-2">
+                        <div class="form-field">
+                            <label for="truck-plate">Placa del Camión *</label>
+                            <input type="text" id="truck-plate" class="hmi-input" placeholder="Ej. BDF-842" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="truck-max-weight">Capacidad Máx. (kg) *</label>
+                            <input type="number" id="truck-max-weight" class="hmi-input" placeholder="Ej. 10000" min="100" max="60000" step="50" required />
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="truck-name">Nombre / Descripción del Furgón *</label>
+                        <input type="text" id="truck-name" class="hmi-input sans" placeholder="Ej. Furgón Isotérmico 10T - Ruta Norte" required />
+                    </div>
+
+                    <div class="crud-row-3">
+                        <div class="form-field">
+                            <label for="truck-length">Largo Interno (cm) *</label>
+                            <input type="number" id="truck-length" class="hmi-input" placeholder="Ej. 650" min="100" max="2000" step="1" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="truck-width">Ancho Interno (cm) *</label>
+                            <input type="number" id="truck-width" class="hmi-input" placeholder="Ej. 240" min="80" max="450" step="1" required />
+                        </div>
+                        <div class="form-field">
+                            <label for="truck-height">Alto Interno (cm) *</label>
+                            <input type="number" id="truck-height" class="hmi-input" placeholder="Ej. 245" min="80" max="450" step="1" required />
+                        </div>
+                    </div>
+
+                    <div class="crud-row-2">
+                        <div class="form-field">
+                            <label for="truck-empty-weight">Tara / Peso Vacío (kg)</label>
+                            <input type="number" id="truck-empty-weight" class="hmi-input" value="3500" min="0" max="30000" step="50" />
+                        </div>
+                        <div class="form-field">
+                            <label>Volumen Calculado</label>
+                            <div class="hmi-input" id="truck-calc-vol-preview" style="color: var(--accent-cyan);">0.00 m&sup3;</div>
+                        </div>
+                    </div>
+
+                    <div style="display:flex; gap:8px; margin-top: 6px;">
+                        <button type="submit" class="btn btn-primary" style="flex:1;" id="btn-save-truck">
+                            Guardar Furgón en Catálogo
+                        </button>
+                        <button type="button" class="btn btn-outline" id="btn-cancel-truck-edit" style="display:none;">
+                            Cancelar
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Tabla de Flota de Furgones -->
+            <div class="crud-card">
+                <div class="crud-card-title">
+                    <span>Catálogo de Flota de Camiones / Furgones Registrados</span>
+                    <span class="brand-badge" id="table-trucks-badge">0 unidades</span>
+                </div>
+                <p class="crud-card-desc">
+                    Selecciona <strong>"Usar en Visor 3D"</strong> para abrir una sesión de estiba con las dimensiones personalizadas de ese camión.
+                </p>
+
+                <div class="table-wrapper">
+                    <table class="hmi-table">
+                        <thead>
+                            <tr>
+                                <th>Placa</th>
+                                <th>Descripción / Modelo</th>
+                                <th>Medidas Internas (L &times; A &times; H)</th>
+                                <th>Volumen Útil</th>
+                                <th>Peso Máx.</th>
+                                <th style="text-align:right;">Acciones CRUD / 3D</th>
+                            </tr>
+                        </thead>
+                        <tbody id="trucks-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- =========================================================================
+         VISTA 3: CATÁLOGO CRUD DE RUTAS / AGENCIAS + CARGA MASIVA EXCEL (.XLSX)
+         ========================================================================= -->
+    <section id="view-agencies" class="view-section">
+        <div class="crud-page-container">
+
+            <!-- Columna Izquierda: Formulario Individual + Carga Masiva Excel -->
+            <div>
+                <div class="crud-card">
+                    <div class="crud-card-title">
+                        <span id="agency-form-title">Registrar / Editar Ruta o Agencia</span>
+                        <span class="brand-badge">AgencyMaster</span>
+                    </div>
+                    <p class="crud-card-desc">
+                        Define las agencias destino y su orden de descarga LIFO (1 = última parada al fondo del camión, mayor = cerca a la puerta).
+                    </p>
+
+                    <form id="crud-agency-form" class="crud-form">
+                        <input type="hidden" id="agency-edit-mode" value="create" />
+
+                        <div class="crud-row-2">
+                            <div class="form-field">
+                                <label for="agency-id">Código Agencia / Ruta *</label>
+                                <input type="text" id="agency-id" class="hmi-input" placeholder="Ej. AG-ICA-07" required />
+                            </div>
+                            <div class="form-field">
+                                <label for="agency-route-code">Corredor / Ruta *</label>
+                                <input type="text" id="agency-route-code" class="hmi-input" placeholder="Ej. CORREDOR-SUR" required />
+                            </div>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="agency-name">Nombre de Agencia / Destino *</label>
+                            <input type="text" id="agency-name" class="hmi-input sans" placeholder="Ej. Agencia Ica Panamericana" required />
+                        </div>
+
+                        <div class="crud-row-3">
+                            <div class="form-field">
+                                <label for="agency-zone-order">Orden LIFO (1..99) *</label>
+                                <input type="number" id="agency-zone-order" class="hmi-input" value="1" min="1" max="99" required />
+                            </div>
+                            <div class="form-field">
+                                <label for="agency-city">Ciudad</label>
+                                <input type="text" id="agency-city" class="hmi-input sans" placeholder="Ej. Ica" />
+                            </div>
+                            <div class="form-field">
+                                <label for="agency-color">Color 3D *</label>
+                                <input type="color" id="agency-color" class="hmi-input" value="#38BDF8" style="height:34px; padding:2px;" />
+                            </div>
+                        </div>
+
+                        <div style="display:flex; gap:8px; margin-top:4px;">
+                            <button type="submit" class="btn btn-primary" style="flex:1;" id="btn-save-agency">
+                                Guardar Ruta / Agencia
+                            </button>
+                            <button type="button" class="btn btn-outline" id="btn-cancel-agency-edit" style="display:none;">
+                                Cancelar
+                            </button>
+                        </div>
+                    </form>
+
+                    <!-- CAJA DE CARGA MASIVA MEDIANTE ARCHIVO EXCEL (.XLSX) -->
+                    <div class="excel-bulk-box">
+                        <div class="crud-card-title" style="font-size: 13.5px; color: #10b981;">
+                            <span>&#128196; Carga Masiva de Rutas mediante Excel (.xlsx)</span>
+                        </div>
+                        <p style="font-size: 11.5px; color: var(--text-secondary); margin-top: 4px;">
+                            Importa o actualiza decenas de rutas y agencias en un solo paso subiendo tu cierre o maestro en formato Excel (<code>.xlsx</code>).
+                        </p>
+
+                        <div class="excel-dropzone" id="excel-dropzone">
+                            <input type="file" id="excel-file-input" accept=".xlsx" style="display:none;" />
+                            <div style="font-weight: 600; color: var(--text-primary); font-size: 12.5px;" id="excel-selected-filename">
+                                Haz clic aquí o arrastra tu archivo Excel (.xlsx)
+                            </div>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                                Columnas: CodigoAgencia, NombreAgencia, CodigoRuta, OrdenDescargaLIFO, Ciudad, ColorHex
+                            </div>
+                        </div>
+
+                        <div style="display:flex; gap:8px;">
+                            <a href="/api/agencies/excel/template" class="btn btn-outline btn-sm" style="flex:1;" download>
+                                &#11015; Descargar Plantilla Excel
+                            </a>
+                            <button type="button" class="btn btn-emerald btn-sm" id="btn-upload-excel" style="flex:1;">
+                                &#11014; Procesar Carga Masiva
+                            </button>
+                        </div>
+
+                        <div id="excel-import-feedback" style="margin-top:8px; font-size:11.5px; display:none;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Columna Derecha: Tabla del Catálogo de Rutas / Agencias -->
+            <div class="crud-card">
+                <div class="crud-card-title">
+                    <span>Catálogo Maestro de Rutas y Agencias Destino (`AgencyMaster`)</span>
+                    <span class="brand-badge" id="table-agencies-badge">0 rutas</span>
+                </div>
+                <p class="crud-card-desc">
+                    El motor <strong>Extreme Points 3D</strong> utiliza este catálogo para colorear los paquetes y priorizar la ubicación dentro del contenedor.
+                </p>
+
+                <div class="table-wrapper">
+                    <table class="hmi-table">
+                        <thead>
+                            <tr>
+                                <th>Color 3D</th>
+                                <th>Código Agencia</th>
+                                <th>Nombre de Agencia / Destino</th>
+                                <th>Corredor / Ruta</th>
+                                <th>Orden LIFO</th>
+                                <th>Ciudad</th>
+                                <th style="text-align:right;">Acciones CRUD</th>
+                            </tr>
+                        </thead>
+                        <tbody id="agencies-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    <!-- Contenedor de Notificaciones Toast -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Scripts Modulares de la Aplicación -->
+    <script src="/static/js/viewer3d.js"></script>
+    <script src="/static/js/crud-trucks.js"></script>
+    <script src="/static/js/crud-agencies.js"></script>
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
